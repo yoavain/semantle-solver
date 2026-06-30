@@ -78,19 +78,24 @@ problem. So the embedding does the climbing and the LLM does the creative leaps:
 | **Avoid hypernyms** | Category words ("tools", "device") are usually cold even when their members are hot — it keys on collocation, not meaning. |
 | **Pivot on plateaus** | The hot cluster is often the *context* around the answer, not its category — reframe to parts / place / action / the device they form. |
 
-## Results so far (puzzle #1590, secret = **מנעול** "lock")
+## Prerequisites
 
-| Player | Guesses | Notes |
-|---|---|---|
-| Claude, manual (CLAUDE.md) | 145 | sweep → tools/fasteners → device → lock |
-| Script, LLM-only | **194** ✅ | solved, but plateaued ~120 guesses at sim 67 before pivoting |
-| Script, hybrid (embedding) | climbs to rank **996**, then stalls | reaches לחצנים 70.89/996 (4th-closest word), התקן 979, מתג 977 — at the doorstep, but doesn't yet *land* the answer |
+The automated script (not the manual Claude flow) needs:
 
-The embedding's premise is proven offline: from the exact cluster where the LLM burned ~120 guesses, the
-embedding ranks **מנעול #5** in its next candidates. The remaining gap to a reliable closer is **(a)**
-Hebrew inflection noise near the answer (מ-participles / verb conjugations the de-noiser doesn't yet
-collapse) and **(b)** the proxy-geometry gap (our fastText ≠ the game's exact word2vec). Both are the
-current tuning targets — see `PLAN.md` → *Session log → Next actions*.
+- **Node.js 18+** (native `fetch` and ESM top-level `await` are used directly, no polyfills).
+- **[Ollama](https://ollama.com)** installed and running as the local LLM server:
+  ```bash
+  ollama serve                # if it isn't already running as a service
+  ollama pull gemma4:12b      # the default model (src/config.ts) — Hebrew-capable, JSON-mode ok
+  ```
+  Override the model with `MODEL=<name>` if you pull something else (e.g. the lighter, noisier
+  `gemma4:e4b`). `npm start` fails fast with a clear error if Ollama isn't reachable at
+  `OLLAMA_URL` (default `http://localhost:11434`), and warns if `MODEL` isn't pulled.
+- **~1.3 GB free disk / bandwidth**, one time, for `npm run build:vectors` — it streams the
+  Hebrew fastText vectors (`cc.he.300`, gzipped) and caches a trimmed top-50k subset to `data/`
+  (gitignored); the transient download is the big cost, the cache itself is much smaller.
+- A **Chromium** browser for Playwright (installed below) — the script drives a real, headed
+  browser window so you can watch it play.
 
 ## Run it
 
