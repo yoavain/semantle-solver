@@ -1,0 +1,21 @@
+{
+  "name": "semantle-solver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Autonomous Hebrew Semantle (סמנטעל) solver — Playwright (headed) + a local model via Ollama.",
+  "scripts": {
+    "start": "tsx src/solver.ts",
+    "play": "tsx src/solver.ts",
+    "build:vectors": "tsx scripts/build-vectors.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
