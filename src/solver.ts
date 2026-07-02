@@ -3,7 +3,7 @@ import { CONFIG } from "./config.ts";
 import { openGame, guess, readCalibration, readResponse, type GameHandle } from "./browser.ts";
 import { generateCandidates, checkModel } from "./ollama.ts";
 import { STARTER_POOL, shuffle, cleanCandidates } from "./strategy.ts";
-import { embeddingAvailable, loadEmbedding, embeddingCandidates } from "./embedding.ts";
+import { embeddingAvailable, loadEmbedding, embeddingCandidates, clusterCohesion } from "./embedding.ts";
 import { formatRank, type BoardEntry } from "./types.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -45,15 +45,19 @@ async function main() {
   let pool = shuffle(STARTER_POOL).slice(0, CONFIG.seedSize);
 
   // Primary candidates from the embedding (relevance-feedback NN); LLM adds pivots / diversity when
-  // plateaued or when the embedding is unavailable/thin.
-  async function nextPool(plateau: boolean): Promise<string[]> {
+  // plateaued or when the embedding is unavailable/thin. `tight` (see embedding.ts clusterCohesion)
+  // distinguishes a coherent single-category plateau (keep digging, relax the diversity filter so more
+  // same-category neighbours survive) from a diverse hub-word plateau (genuinely pivot frame).
+  async function nextPool(plateau: boolean, tight: boolean): Promise<string[]> {
     const exclude = new Set<string>([...tried, ...rejected]);
-    let out: string[] = useEmbedding ? embeddingCandidates(board, exclude, CONFIG.batchSize, CONFIG.diversity) : [];
+    const maxSim = plateau && tight ? CONFIG.diversityRelaxed : CONFIG.diversity;
+    let out: string[] = useEmbedding ? embeddingCandidates(board, exclude, CONFIG.batchSize, maxSim) : [];
     if (!useEmbedding || plateau || out.length < CONFIG.batchSize) {
       const llm = await generateCandidates({
         top: board.slice(0, 15),
         tried,
         plateau,
+        tight,
         batchSize: CONFIG.batchSize,
       });
       for (const w of llm) if (!out.includes(w)) out.push(w);
@@ -65,9 +69,10 @@ async function main() {
     while (true) {
       let toGuess = cleanCandidates(pool, tried, rejected);
 
-      // If we have no fresh candidates, regenerate (forcing a pivot), then fall back to probes.
+      // If we have no fresh candidates, regenerate (forcing a plateau round), then fall back to probes.
       if (toGuess.length === 0) {
-        toGuess = cleanCandidates(await nextPool(true), tried, rejected);
+        const tight = clusterCohesion(board) >= CONFIG.cohesionTight;
+        toGuess = cleanCandidates(await nextPool(true, tight), tried, rejected);
         if (toGuess.length === 0) {
           toGuess = cleanCandidates(shuffle(STARTER_POOL), tried, rejected);
           if (toGuess.length === 0) {
@@ -114,13 +119,14 @@ async function main() {
       const bestSim = board[0]?.sim ?? 0;
       bestHistory.push(bestSim);
       const plateau = isPlateau(bestHistory);
+      const tight = clusterCohesion(board) >= CONFIG.cohesionTight;
 
       round++;
-      console.log(`\n--- round ${round} | tried ${tried.size} | best ${bestSim.toFixed(2)}` +
-        `${plateau ? " | PLATEAU → pivot" : ""} ---`);
+      const plateauTag = plateau ? (tight ? " | PLATEAU(tight) → enumerate" : " | PLATEAU(loose) → pivot") : "";
+      console.log(`\n--- round ${round} | tried ${tried.size} | best ${bestSim.toFixed(2)}${plateauTag} ---`);
       printTop(board, 8);
 
-      pool = await nextPool(plateau);
+      pool = await nextPool(plateau, tight);
     }
   } finally {
     if (browser.isConnected()) await browser.close();

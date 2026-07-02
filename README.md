@@ -65,8 +65,9 @@ problem. So the embedding does the climbing and the LLM does the creative leaps:
   ```
   This optimises the *same metric the game rewards*, so it won't drift into thematically-related-but-
   distant words. A `baseForm()` step collapses clitic-prefixed inflections (המנעול/וברגים → base).
-- **LLM (seeds + pivots).** Supplies the initial broad sweep and, when the embedding plateaus, a creative
-  reframe ("what *secures* a door? → a lock") that injects a new region for the embedding to exploit.
+- **LLM (seeds + plateau moves).** Supplies the initial broad sweep and, when the embedding plateaus,
+  either digs deeper into a coherent category or reframes to a new region, depending on `clusterCohesion`
+  (see below) — the embedding then exploits whichever region it points at.
 
 ### Heuristics (shared by the manual play and the LLM prompt)
 
@@ -76,7 +77,7 @@ problem. So the embedding does the climbing and the LLM does the creative leaps:
 | **Calibrate to the day** | The header gives today's closest / 10th / 1000th scores, so "57" is hot some days, cold others. |
 | **Exploit morphology** | Very number-sensitive: a plural can score 40+ above its singular (ברגים 67 vs בורג 25). |
 | **Avoid hypernyms** | Category words ("tools", "device") are usually cold even when their members are hot — it keys on collocation, not meaning. |
-| **Pivot on plateaus** | The hot cluster is often the *context* around the answer, not its category — reframe to parts / place / action / the device they form. |
+| **On a plateau, check cohesion before reframing** | `clusterCohesion` (avg pairwise cosine of the top 8) tells the two plateau cases apart: a **tight** cluster (many co-hyponyms at similar scores, e.g. a page of vegetables) means the answer is an untried member of that *same* category — enumerate deeper, don't leave it. A **loose** cluster means the hot words are *context* around the answer, not its category — reframe to parts / place / action / the object tying them together. Conflating the two (pivoting away from a tight cluster) burns guesses on unrelated words. |
 
 ## Prerequisites
 

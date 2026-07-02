@@ -30,8 +30,11 @@ export interface CandidateContext {
   top: BoardEntry[];
   /** Every word already guessed (accepted) — never propose these again. */
   tried: Set<string>;
-  /** Whether the best score has plateaued (→ ask the model to pivot frame). */
+  /** Whether the best score has plateaued (→ ask the model for a plateau-specific batch). */
   plateau: boolean;
+  /** Only meaningful when `plateau` is true: is the hot cluster ONE coherent category (enumerate
+   *  deeper) or a diverse grab-bag (pivot frame)? See embedding.ts `clusterCohesion`. */
+  tight: boolean;
   /** How many words to return. */
   batchSize: number;
 }

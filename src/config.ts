@@ -53,4 +53,13 @@ export const CONFIG = {
   /** Plateau detection: rounds of no best-similarity improvement before we tell the model to PIVOT. */
   plateauRounds: num(process.env.PLATEAU_ROUNDS, 2),
   plateauEps: num(process.env.PLATEAU_EPS, 0.5),
+
+  /** Avg pairwise cosine among the top 8 hot words (embedding.ts clusterCohesion) at/above this means
+   *  the leaderboard is ONE coherent category, not a diverse hub — on a plateau, ENUMERATE deeper into
+   *  it instead of PIVOTing frame. */
+  cohesionTight: num(process.env.COHESION_TIGHT, 0.35),
+  /** MMR diversity ceiling used instead of `diversity` when plateaued AND tight: relaxed so the
+   *  embedding search can keep surfacing more same-category neighbours instead of being forced to
+   *  spread out across unrelated regions. */
+  diversityRelaxed: num(process.env.DIVERSITY_RELAXED, 0.85),
 } as const;

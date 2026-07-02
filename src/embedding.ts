@@ -39,7 +39,7 @@ export function vecOf(w: string): Float32Array | null {
 }
 
 /** Dot product of two DIM-length vectors, each optionally offset into a larger buffer. */
-function dot(a: Float32Array, b: Float32Array, aBase = 0, bBase = 0): number {
+export function dot(a: Float32Array, b: Float32Array, aBase = 0, bBase = 0): number {
   let s = 0;
   for (let j = 0; j < DIM; j++) s += a[aBase + j] * b[bBase + j];
   return s;
@@ -97,6 +97,29 @@ export function rocchioQuery(board: BoardEntry[]): Float32Array | null {
   }
   if (positives === 0) return null;
   return normalize(q);
+}
+
+/** Average pairwise cosine similarity among the top-N hot board entries that have vectors — a proxy
+ *  for whether the leaderboard is ONE coherent category (high) vs a diverse grab-bag of loosely-related
+ *  hub words (low). On a plateau this decides ENUMERATE-deeper vs PIVOT-frame (see CLAUDE.md §5.7-8):
+ *  a tight cluster (many near-synonyms/co-hyponyms, e.g. a page of vegetables) means the answer is
+ *  probably an untried member of that same category; a loose cluster means the hot words are context
+ *  around the answer, not its category. */
+export function clusterCohesion(board: BoardEntry[], topN = 8): number {
+  const vecs = board
+    .slice(0, topN)
+    .map((e) => vecOf(e.word))
+    .filter((v): v is Float32Array => v !== null);
+  if (vecs.length < 2) return 0;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < vecs.length; i++) {
+    for (let j = i + 1; j < vecs.length; j++) {
+      sum += dot(vecs[i], vecs[j]);
+      count++;
+    }
+  }
+  return count ? sum / count : 0;
 }
 
 // Clitic prefixes (and/the/in/to/as/that). NOT מ — too many real nouns start with it (מנעול, מקדחה).

@@ -57,8 +57,13 @@ Given the hottest previous guesses, propose NEW single Hebrew words likely to sc
 4. Also guess words conceptually "between" the two hottest words.
 5. Prefer SPECIFIC concrete nouns. Avoid broad category/umbrella words (e.g. "tools", "equipment") and
    place/abstraction words — they tend to score low even when their members are hot.
-6. When told to PIVOT, the hot cluster may be the CONTEXT around the answer, not its category: switch
-   frame to the object's parts, where it is used, the action done with it, or the device its parts form.`;
+6. On a PLATEAU you'll be told which of two situations applies:
+   - ENUMERATE: the hot words are one tight, coherent category (e.g. all vegetables, all tools) — the
+     answer is likely an untried member of that SAME category. Go deeper/rarer within it; do not change
+     domain.
+   - PIVOT: the hot words are a loose, diverse CONTEXT around the answer, not its category. Switch frame
+     to what concretely CONNECTS them — the object they're part of, where/how they're used, the action
+     done with them — and propose specific nouns from that different angle.`;
 
 export function buildUserPrompt(ctx: CandidateContext): string {
   const board = ctx.top
@@ -68,14 +73,19 @@ export function buildUserPrompt(ctx: CandidateContext): string {
   // Cap the "do not repeat" list to keep the prompt lean while still covering recent/relevant words.
   const triedList = [...ctx.tried].slice(-140).join(", ");
 
-  const pivot = ctx.plateau
-    ? `\nThe top score has PLATEAUED — the hot words are CONTEXT around the secret, NOT the answer itself.
-Do NOT add more minor variants, plurals, or near-synonyms of the hot words. PIVOT by function: name
-concrete physical OBJECTS / DEVICES that the hot words are a PART OF, or that they
-LOCK · SECURE · CLOSE · OPEN · FASTEN · CONTROL · OPERATE · are INSTALLED ON.
-Think "what single object do these belong to or act on?" and give specific end-object nouns from a
-DIFFERENT angle than the current cluster.`
-    : "";
+  let pivot = "";
+  if (ctx.plateau && ctx.tight) {
+    pivot = `\nThe top score has PLATEAUED, but these hot words are a TIGHT, coherent category (many
+close synonyms/co-hyponyms at similar scores) — the answer is very likely an untried member of this
+SAME category, not something outside it. ENUMERATE deeper: propose more specific/rarer members of this
+exact category, and make sure every hot word has BOTH its singular and plural form tried. Do NOT change
+domain.`;
+  } else if (ctx.plateau) {
+    pivot = `\nThe top score has PLATEAUED and these hot words look like a loose, diverse CONTEXT around
+the secret rather than its category. PIVOT by function: name concrete physical objects/places/actions
+that CONNECT these words — what they are a PART OF, used WITH or ON, or the specific thing tying them
+together. Give specific nouns from a DIFFERENT angle than the current cluster, not more synonyms of it.`;
+  }
 
   return `Hottest guesses so far (word: similarity (rank)):
 ${board || "(none yet)"}

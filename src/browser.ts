@@ -10,8 +10,13 @@ export interface GameHandle {
 
 /** Launch a (visible) browser and load the game. */
 export async function openGame(): Promise<GameHandle> {
-  const browser = await chromium.launch({ headless: CONFIG.headless });
-  const context = await browser.newContext({ locale: "he-IL" });
+  const browser = await chromium.launch({
+    headless: CONFIG.headless,
+    args: CONFIG.headless ? [] : ["--start-maximized"],
+  });
+  // viewport: null lets the page fill the actual (maximized) window instead of Playwright's
+  // default fixed 800x600 viewport.
+  const context = await browser.newContext({ locale: "he-IL", viewport: CONFIG.headless ? undefined : null });
   const page = await context.newPage();
   // domcontentloaded (not networkidle): the page's ads + long-poll never go idle.
   await page.goto(CONFIG.url, { waitUntil: "domcontentloaded", timeout: 60_000 });
