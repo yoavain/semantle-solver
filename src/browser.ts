@@ -28,7 +28,26 @@ export async function openGame(): Promise<GameHandle> {
        return !!(window.jQuery && f && window.jQuery._data(f,'events') && window.jQuery._data(f,'events').submit); })()`,
     { timeout: 30_000 },
   );
+  await dismissRulesOverlay(page);
   return { browser, page };
+}
+
+/**
+ * A fresh Playwright context has empty localStorage, so Semantle.init() always auto-opens the
+ * "rules" (how-to-play, heading "נחשו את המילה הסודית") dialog on load: body.rules-open +
+ * #rules-underlay, a full-viewport z-index:1000 backdrop that intercepts clicks on #guess-btn
+ * underneath it. Wait for it (it may not appear at all, e.g. with a reused profile) and dismiss it
+ * via the real close button so the guess flow isn't blocked.
+ */
+async function dismissRulesOverlay(page: Page): Promise<void> {
+  const rulesClose = page.locator("#rules-close");
+  try {
+    await rulesClose.waitFor({ state: "visible", timeout: 10_000 });
+  } catch {
+    return; // overlay never appeared — nothing to dismiss
+  }
+  await rulesClose.click();
+  await page.locator("#rules-underlay").waitFor({ state: "hidden", timeout: 5_000 });
 }
 
 /** Read the header text that states today's score scale (closest / 10th / 1000th similarities). */
