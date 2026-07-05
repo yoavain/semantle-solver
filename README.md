@@ -113,3 +113,5 @@ Tunables (env): `MODEL`, `EMBEDDING` (false = LLM-only), `HEADLESS`, `THROTTLE_M
 - **`PLAN.md`** — the script's design, status, model tests, and a resumable debugging log.
 - **`README.md`** — this human-facing overview.
 - **`src/` · `scripts/`** — the solver. **`data/`** — the (gitignored) local vector cache.
+- **`runs/`** — gitignored, per-game structured logs (schema: `src/runlog.ts`), written by both play
+  modes. Raw material for refining `STARTER_POOL` / the heuristics once enough games accumulate.

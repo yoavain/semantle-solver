@@ -1,10 +1,11 @@
 // Entry point: orchestrates the play loop. Pure-code loop/stop/dedup; the model only suggests words.
 import { CONFIG } from "./config.ts";
-import { openGame, guess, readCalibration, readResponse, type GameHandle } from "./browser.ts";
+import { openGame, guess, readCalibration, readPuzzleNumber, readResponse, type GameHandle } from "./browser.ts";
 import { generateCandidates, checkModel } from "./ollama.ts";
 import { STARTER_POOL, shuffle, cleanCandidates } from "./strategy.ts";
 import { embeddingAvailable, loadEmbedding, embeddingCandidates, clusterCohesion } from "./embedding.ts";
 import { formatRank, type BoardEntry } from "./types.ts";
+import { writeRunLog, type GuessLogEntry } from "./runlog.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sortBoard = (board: BoardEntry[]) => board.sort((a, b) => b.sim - a.sim);
@@ -34,10 +35,13 @@ async function main() {
   const { browser, page } = handle;
   const calibration = await readCalibration(page);
   if (calibration) console.log(`Daily scale: ${calibration}\n`);
+  const puzzle = await readPuzzleNumber(page);
+  const date = new Date().toISOString().slice(0, 10);
 
   const tried = new Set<string>();
   const rejected = new Set<string>();
   const board: BoardEntry[] = [];
+  const guessLog: GuessLogEntry[] = [];
   const bestHistory: number[] = [];
   let round = 0;
   // First round uses a random subset of the broad sweep (varies run-to-run); later rounds come from
@@ -86,6 +90,7 @@ async function main() {
       for (const w of toGuess) {
         const r = await guess(page, w);
         await sleep(CONFIG.throttleMs);
+        guessLog.push({ word: w, ok: r.ok, sim: r.sim, rank: r.rank });
 
         if (!r.ok || r.sim == null) {
           rejected.add(w);
@@ -102,6 +107,12 @@ async function main() {
           const banner = await readResponse(page);
           console.log(`\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`);
           if (banner) console.log(banner.split("\n")[0]);
+          const path = writeRunLog({
+            puzzle, date, secret: w, mode: "automated", solved: true,
+            totalGuesses: tried.size, guesses: guessLog, calibration,
+            config: { model: CONFIG.model, embedding: CONFIG.embedding, seedSize: CONFIG.seedSize, batchSize: CONFIG.batchSize },
+          });
+          console.log(`Run log: ${path}`);
           await browser.close();
           return;
         }
@@ -109,6 +120,13 @@ async function main() {
           sortBoard(board);
           console.log(`\n⏹ Budget reached (${CONFIG.maxGuesses}). Best so far:`);
           printTop(board, 10);
+          const path = writeRunLog({
+            puzzle, date, secret: null, mode: "automated", solved: false,
+            totalGuesses: tried.size, guesses: guessLog, calibration,
+            config: { model: CONFIG.model, embedding: CONFIG.embedding, seedSize: CONFIG.seedSize, batchSize: CONFIG.batchSize },
+            notes: `Budget reached (${CONFIG.maxGuesses}). Best: ${board[0]?.word} (${board[0]?.sim.toFixed(2)}).`,
+          });
+          console.log(`Run log: ${path}`);
           await browser.close();
           return;
         }

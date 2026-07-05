@@ -58,6 +58,13 @@ export async function readCalibration(page: Page): Promise<string> {
   return line.trim();
 }
 
+/** Puzzle number from the header ("חידה מספר NNN"), or null if it can't be found. */
+export async function readPuzzleNumber(page: Page): Promise<number | null> {
+  const text = await page.evaluate(() => document.body.innerText || "");
+  const m = text.match(/חידה מספר\s*(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
 /**
  * Guess one word through the REAL UI (type into #guess, click the ניחוש button), then read the
  * resulting row from the #guesses table. Runs entirely in page context.

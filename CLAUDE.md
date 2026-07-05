@@ -5,8 +5,9 @@ below end-to-end against **https://semantle.ishefi.com/** until the word is foun
 instructions**. Everything you need is in this file.
 
 > **Standing meta-instruction:** after every session, update this file with anything that makes the next
-> run faster/smarter (new high-signal probes, model quirks, automation gotchas, sharper heuristics) and
-> append the solved word to the log in §6. Continuous optimization of this runbook is part of the task.
+> run faster/smarter (new high-signal probes, model quirks, automation gotchas, sharper heuristics),
+> write a run log (§6), and append the solved word to the table in §6. Continuous optimization of this
+> runbook is part of the task.
 
 ---
 
@@ -23,7 +24,9 @@ instructions**. Everything you need is in this file.
    sim+rank and top-10 leaderboard, then choose the next batch by the strategy heuristics. Start from
    the broad-sweep probes in §6.
 7. **Stop when** a guess returns rank `מצאת!` / similarity `100`. Read `#response` for the win line
-   (`ניצחת! ... תוך N ניחושים`), report the word + guess count, then update §6.
+   (`ניצחת! ... תוך N ניחושים`), report the word + guess count, then:
+   - Write a run log — see "Run log" under §6 for the shape and where it goes.
+   - Update the §6 solved-log table with the new row (the curated, human-readable summary).
 
 Throughout, obey the constraints in §4 (throttle, real-UI clicks, visible mode).
 
@@ -125,10 +128,36 @@ Each turn: `JSON.stringify(await window.guessMany(['מילה1','מילה2', ...]
 ## 6. Reference data
 
 ### Broad-sweep starter probes (use as the first 1–2 batches)
-`אדם, ילד, כלב, עץ, מים, אש, ים, אהבה, פחד, זמן, כסף, מלחמה, מכונית, בית, אוכל, ספר, מוזיקה, מחשב, יד, ראש, מלך, חוק, דרך, אבן`
-Follow the 2–3 warmest into their specific neighbourhoods per §5.
+Source of truth is `STARTER_POOL` in `src/strategy.ts` — copied here so manual sessions don't need to
+open that file. **If this list and the code diverge, the code wins; update this copy to match.**
+```
+אדם, ילד, כלב, עץ, מים, אש, ים, אהבה, פחד, זמן, כסף, מלחמה, מכונית, בית, אוכל, ספר, מוזיקה, מחשב,
+יד, ראש, מלך, חוק, דרך, אבן, שמש, ירח, כוכב, הר, נהר, פרח, ציפור, דג, סוס, חתול, שולחן, כיסא, דלת,
+חלון, טלפון, בגד, נעל, שעון, מפתח, כלי, רגש, מחשבה, חלום, צבע, קול, ריח, טעם, מספר, אות, שם
+```
+Manual sessions: guess a random subset (the automated solver shuffles and takes 18; picking ~15–20 at
+random works well manually too — don't always fire the same fixed order). Follow the 2–3 warmest into
+their specific neighbourhoods per §5.
+
+### Run log (raw data for refining the pool/heuristics)
+Every game — manual or automated — writes one structured record to `runs/` (gitignored, local only;
+the solved-log table below is the curated summary that *does* get committed). Schema source of truth:
+the `RunRecord` type in `src/runlog.ts`. Automated runs (`solver.ts`) write it automatically. For a
+manual session, write it yourself at step 7 via a normal file write (Node-side, not page JS) to
+`runs/<puzzle>-<date>.json`:
+```json
+{
+  "puzzle": 1590, "date": "2026-06-30", "secret": "מנעול", "mode": "manual", "solved": true,
+  "totalGuesses": 145,
+  "guesses": [ { "word": "אדם", "ok": true, "sim": 12.3, "rank": null }, "... one entry per guess this session, in order, including rejected/unknown words ..." ],
+  "calibration": "the §2 header line", "notes": "one-line summary of the winning path"
+}
+```
+Once several runs accumulate in `runs/`, mine it to refine `STARTER_POOL` (drop words that are
+consistently cold across games) and the §5 heuristics with real frequency data instead of narrative
+memory of one game.
 
 ### Solved log
 | Puzzle | Date       | Secret word        | Guesses | Path / lesson |
 |--------|------------|--------------------|---------|----------------|
-| #1590  | 2026-06-30 | **מנעול** (lock)   | 145     | sweep → עץ(wood)43/כלב(dog)38 → handheld implements (מקל 58) → power tools + fasteners (מקדחה 67/976, ברגים 67/971) → device/mechanism (התקן 67/979, מתג 67/977) → **מנעול** 100. Lesson: the tool cluster was the answer's *installation context*, not its category — on a ~67 plateau, pivot to "what object is installed with these / what device do these parts form." Weak early pointers: בריח 58, מפתח 46, התקן 67. |
+| #1590  | 2026-06-30 | **מנעול** (lock)   | 145     | sweep → עץ(wood)43/כלב(dog)38 → handheld implements (מקל 58) → power tools + fasteners (מקדחה 67/976, ברגים 67/971) → device/mechanism (התקן 67/979, מתג 67/977) → **מנעול** 100. Lesson: the tool cluster was the answer's *installation context*, not its category — on a ~67 plateau, pivot to "what object is installed with these / what device do these parts form." Weak early pointers: בריח 58, מפתח 46, התקן 67. *(Full guess history not captured — predates the runs/ log; see `runs/1590-2026-06-30.json` for the backfilled summary.)* |
