@@ -122,6 +122,60 @@ export function clusterCohesion(board: BoardEntry[], topN = 8): number {
   return count ? sum / count : 0;
 }
 
+/** Greedy farthest-point sampling: pick `k` words from `pool` that spread across semantic space,
+ *  instead of a plain random sample that can cluster by chance and miss whole domains entirely (a pool
+ *  with N roughly-equal-size domains sampled at random has a real chance of skipping one — see the
+ *  #1598 lesson in CLAUDE.md §5.9). Starts from a random word (so repeated runs open differently), then
+ *  repeatedly adds whichever remaining word has the LOWEST max-cosine-similarity to everything already
+ *  chosen (i.e. the one least like anything picked so far). `noise` jitters that score (see
+ *  CONFIG.explorationNoise) so the farthest-point search itself isn't perfectly deterministic after the
+ *  random start. Words without a vector can't be scored for diversity; they're appended at random only
+ *  to fill out `k` if the vectorized words run short.
+ */
+export function diverseSeed(pool: readonly string[], k: number, noise = 0): string[] {
+  const withVec = pool.filter(hasWord);
+  const withoutVec = pool.filter((w) => !hasWord(w));
+  if (withVec.length === 0) return shuffleSample(pool, k);
+
+  const start = withVec[Math.floor(Math.random() * withVec.length)];
+  const chosen = [start];
+  const chosenVecs = [vecOf(start)!];
+  const remaining = new Set(withVec.filter((w) => w !== start));
+
+  while (chosen.length < k && remaining.size > 0) {
+    let best: string | null = null;
+    let bestScore = Infinity;
+    for (const w of remaining) {
+      const v = vecOf(w)!;
+      let maxSim = -Infinity;
+      for (const cv of chosenVecs) maxSim = Math.max(maxSim, dot(v, cv));
+      if (noise > 0) maxSim += (Math.random() * 2 - 1) * noise;
+      if (maxSim < bestScore) {
+        bestScore = maxSim;
+        best = w;
+      }
+    }
+    chosen.push(best as string);
+    chosenVecs.push(vecOf(best as string)!);
+    remaining.delete(best as string);
+  }
+
+  if (chosen.length < k) {
+    for (const w of shuffleSample([...remaining, ...withoutVec], k - chosen.length)) chosen.push(w);
+  }
+  return chosen;
+}
+
+/** Fisher-Yates sample of up to `k` items — local to avoid a strategy.ts <-> embedding.ts import cycle. */
+function shuffleSample<T>(arr: readonly T[], k: number): T[] {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out.slice(0, k);
+}
+
 // Clitic prefixes (and/the/in/to/as/that). NOT מ — too many real nouns start with it (מנעול, מקדחה).
 const PREFIXES = new Set(["ו", "ה", "ב", "ל", "כ", "ש"]);
 

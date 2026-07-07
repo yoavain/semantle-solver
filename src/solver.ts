@@ -3,7 +3,7 @@ import { CONFIG } from "./config.ts";
 import { openGame, guess, readCalibration, readPuzzleNumber, readResponse, type GameHandle } from "./browser.ts";
 import { generateCandidates, checkModel } from "./ollama.ts";
 import { STARTER_POOL, shuffle, cleanCandidates } from "./strategy.ts";
-import { embeddingAvailable, loadEmbedding, embeddingCandidates, clusterCohesion } from "./embedding.ts";
+import { embeddingAvailable, loadEmbedding, embeddingCandidates, clusterCohesion, diverseSeed } from "./embedding.ts";
 import { formatRank, type BoardEntry } from "./types.ts";
 import { writeRunLog, type GuessLogEntry } from "./runlog.ts";
 
@@ -44,9 +44,13 @@ async function main() {
   const guessLog: GuessLogEntry[] = [];
   const bestHistory: number[] = [];
   let round = 0;
-  // First round uses a random subset of the broad sweep (varies run-to-run); later rounds come from
-  // embedding + LLM.
-  let pool = shuffle(STARTER_POOL).slice(0, CONFIG.seedSize);
+  // First round spans semantic space deliberately (farthest-point sampling over the pool's embedding
+  // vectors) instead of a plain random subset, so it can't cluster into one domain and miss another by
+  // chance (see CLAUDE.md #1598). Falls back to a random subset when the embedding isn't available.
+  // Later rounds come from embedding + LLM.
+  let pool = useEmbedding
+    ? diverseSeed(STARTER_POOL, CONFIG.seedSize, CONFIG.explorationNoise)
+    : shuffle(STARTER_POOL).slice(0, CONFIG.seedSize);
 
   // Primary candidates from the embedding (relevance-feedback NN); LLM adds pivots / diversity when
   // plateaued or when the embedding is unavailable/thin. `tight` (see embedding.ts clusterCohesion)

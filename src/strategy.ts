@@ -11,6 +11,9 @@ export const STARTER_POOL: string[] = [
   "שמש", "ירח", "כוכב", "הר", "נהר", "פרח", "ציפור", "דג", "סוס", "חתול",
   "שולחן", "כיסא", "דלת", "חלון", "טלפון", "בגד", "נעל", "שעון", "מפתח", "כלי",
   "רגש", "מחשבה", "חלום", "צבע", "קול", "ריח", "טעם", "מספר", "אות", "שם",
+  // Abstract/institutional domain (economy, society, governance) — #1598 מגזר took ~70 guesses to
+  // warm up because none of the above touch this domain at all; see CLAUDE.md solved-log lesson.
+  "כלכלה", "חברה", "עסק", "ממשלה", "פוליטיקה", "מדע", "בריאות", "חינוך", "משפט", "תרבות", "מעמד", "תחום",
 ];
 
 /** Fisher-Yates shuffle; returns a new array, leaves `arr` untouched. */
@@ -55,8 +58,11 @@ Given the hottest previous guesses, propose NEW single Hebrew words likely to sc
 3. Exploit the hottest words: their close associates and synonyms, and try BOTH plural AND singular
    forms (this model is very number-sensitive — plurals can score far higher than singulars).
 4. Also guess words conceptually "between" the two hottest words.
-5. Prefer SPECIFIC concrete nouns. Avoid broad category/umbrella words (e.g. "tools", "equipment") and
-   place/abstraction words — they tend to score low even when their members are hot.
+5. When the hot words name PHYSICAL OBJECTS, prefer SPECIFIC concrete nouns: avoid broad category/
+   umbrella words (e.g. "tools", "equipment") — they tend to score low even when their members are hot.
+   BUT if the hot words are themselves institutional/economic/societal terms (business, industry,
+   finance, tourism, retail, etc.), the secret is likely ALSO an abstract category word (sector, field,
+   branch, class, status) — do not avoid abstraction in that domain, lean into it.
 6. On a PLATEAU you'll be told which of two situations applies:
    - ENUMERATE: the hot words are one tight, coherent category (e.g. all vegetables, all tools) — the
      answer is likely an untried member of that SAME category. Go deeper/rarer within it; do not change

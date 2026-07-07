@@ -111,10 +111,13 @@ Each turn: `JSON.stringify(await window.guessMany(['מילה1','מילה2', ...]
 4. **Exploit morphology — this model is very number-sensitive.** Plural/collective forms can score
    *far* higher than singular in list/inventory contexts (#1590: ברגים 67 vs בורג 25; אומים 60 vs אום 17).
    **Always test both plural and singular of a hot word.**
-5. **Skip hypernyms.** Category-hub / umbrella words are usually COLD even when their members are hot
-   (#1590: drill/screws 67 hot, but כלי/ציוד/אביזרים/מכשירים and workshop/garage 30–46). The model keys
-   on collocation, not meaning — so even a *synonym* of a hot word can be cold (התקן 67 vs מתקן 44).
-   Chase **specific concrete** nouns.
+5. **Skip hypernyms — but only for physical-object domains.** Category-hub / umbrella words are usually
+   COLD when their members are concrete objects (#1590: drill/screws 67 hot, but כלי/ציוד/אביזרים/מכשירים
+   and workshop/garage 30–46). The model keys on collocation, not meaning — so even a *synonym* of a hot
+   word can be cold (התקן 67 vs מתקן 44). Chase **specific concrete** nouns in that case. **This inverts
+   for institutional/economic domains**: if the hot words are business/industry/finance-flavored terms,
+   the secret is often itself an abstract category word (sector, field, branch, class) — see #1598 below.
+   Don't blanket-avoid abstraction; judge by what kind of hot words you actually have.
 6. **Hill-climb:** expand around the top 2–3 words with their close associates; guess words *semantically
    between* two high scorers; abandon directions that stay `(רחוק)`.
 7. **On a plateau, pivot frame.** When the top barely moves across a batch (you'll often pack the 60–67
@@ -124,6 +127,20 @@ Each turn: `JSON.stringify(await window.guessMany(['מילה1','מילה2', ...]
    drill + screws install a **lock**, which is a locking *device* with cylinder/spring/latch/handle/key.)
 8. **Converge:** once a tight sub-category emerges, enumerate it exhaustively (members, synonyms,
    adjacent specifics, plural+singular) until rank → `מצאת!`.
+9. **Broad sweep must cover abstract/institutional domains too, not just physical objects.** #1598
+   (מגזר, "sector") took ~70 guesses just to warm up: none of the original starter words touched
+   economy/society/government, so there was no early signal, and the LLM (steered by the old, blanket
+   version of rule 5) spent 50+ guesses drilling deeper into an unrelated concrete cluster (food/kitchen/
+   harvest, all sub-40) instead of trying business/industry/finance words. The pool now seeds
+   כלכלה/חברה/עסק/ממשלה/פוליטיקה/מדע/בריאות/חינוך/משפט/תרבות/מעמד/תחום for exactly this case. Also note:
+   the solver's embedding engine (Rocchio relevance feedback, `src/embedding.ts`) only starts
+   contributing candidates once a guess crosses `rocchioHotMin` (sim ≥ 50) or lands in the top-1000 —
+   until then it's LLM-only. If nothing crosses that bar for many rounds, the LLM's own word choices are
+   the *entire* search, so a bad early frame (see above) can stall the game for a very long time with no
+   independent correction. **Fix applied:** the automated solver no longer takes a plain random subset of
+   the pool for its opening batch — `diverseSeed()` in `src/embedding.ts` greedily farthest-point-samples
+   over the pool's embedding vectors, so the 18 opening words are spread across semantic space by
+   construction and can't cluster into one domain and skip another by chance.
 
 ## 6. Reference data
 
@@ -133,11 +150,15 @@ open that file. **If this list and the code diverge, the code wins; update this 
 ```
 אדם, ילד, כלב, עץ, מים, אש, ים, אהבה, פחד, זמן, כסף, מלחמה, מכונית, בית, אוכל, ספר, מוזיקה, מחשב,
 יד, ראש, מלך, חוק, דרך, אבן, שמש, ירח, כוכב, הר, נהר, פרח, ציפור, דג, סוס, חתול, שולחן, כיסא, דלת,
-חלון, טלפון, בגד, נעל, שעון, מפתח, כלי, רגש, מחשבה, חלום, צבע, קול, ריח, טעם, מספר, אות, שם
+חלון, טלפון, בגד, נעל, שעון, מפתח, כלי, רגש, מחשבה, חלום, צבע, קול, ריח, טעם, מספר, אות, שם,
+כלכלה, חברה, עסק, ממשלה, פוליטיקה, מדע, בריאות, חינוך, משפט, תרבות, מעמד, תחום
 ```
-Manual sessions: guess a random subset (the automated solver shuffles and takes 18; picking ~15–20 at
-random works well manually too — don't always fire the same fixed order). Follow the 2–3 warmest into
-their specific neighbourhoods per §5.
+The automated solver picks its opening 18 via farthest-point sampling over the pool's embedding vectors
+(`diverseSeed()` in `src/embedding.ts`, see §5.9) so the batch is spread across semantic space by
+construction, not left to chance — falls back to a random subset if the embedding cache is unavailable.
+Manual sessions don't have that machinery: guess a random subset (picking ~15–20 at random works well —
+don't always fire the same fixed order, and try to eyeball spread across domains: nature/objects/people
+AND abstract/institutional). Follow the 2–3 warmest into their specific neighbourhoods per §5.
 
 ### Run log (raw data for refining the pool/heuristics)
 Every game — manual or automated — writes one structured record to `runs/` (gitignored, local only;
@@ -161,3 +182,5 @@ memory of one game.
 | Puzzle | Date       | Secret word        | Guesses | Path / lesson |
 |--------|------------|--------------------|---------|----------------|
 | #1590  | 2026-06-30 | **מנעול** (lock)   | 145     | sweep → עץ(wood)43/כלב(dog)38 → handheld implements (מקל 58) → power tools + fasteners (מקדחה 67/976, ברגים 67/971) → device/mechanism (התקן 67/979, מתג 67/977) → **מנעול** 100. Lesson: the tool cluster was the answer's *installation context*, not its category — on a ~67 plateau, pivot to "what object is installed with these / what device do these parts form." Weak early pointers: בריח 58, מפתח 46, התקן 67. *(Full guess history not captured — predates the runs/ log; see `runs/1590-2026-06-30.json` for the backfilled summary.)* |
+| #1597  | 2026-07-06 | **חיוך** (smile)   | 106     | Fast solve: starter word אהבה (love) landed at sim 59.79/rank 348 on guess #3 — the pool happened to already contain a close neighbor, so the whole game was a normal hillclimb with no cold phase. |
+| #1598  | 2026-07-07 | **מגזר** (sector)  | 136     | sweep (all concrete/physical, no hits) → 50+ guesses drilling a food/kitchen/harvest tangent (טעם 32, מפתח 40, כרם 35, זית 29 — all cold, never really climbing) → חקלאות(agriculture) 53.65 finally broke 50 at guess #68 → business/finance cluster (הייטק 70.8/993, עסקים 61.6/829, פיננסים 64.4/927, עסקי 66.2/964) → **מגזר** 100. Lesson: warm-up took ~70 guesses because (a) the starter pool had zero economy/society/government coverage, and (b) the "chase concrete nouns, skip hypernyms" heuristic is *wrong* for institutional secrets — see §5.9. Also confirmed the embedding engine (`rocchioQuery`) contributes nothing until a guess crosses sim 50, so this whole cold phase was pure LLM associative chaining with no correction. Pool + prompt heuristic updated in response (§5.9, §6). |
