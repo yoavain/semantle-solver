@@ -7,6 +7,7 @@
   "scripts": {
     "start": "tsx src/solver.ts",
     "play": "tsx src/solver.ts",
+    "play:quiet": "cross-env HEADLESS=true tsx src/solver.ts",
     "build:vectors": "tsx scripts/build-vectors.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -14,8 +15,9 @@
     "playwright": "1.61.1"
   },
   "devDependencies": {
+    "@types/node": "22.20.0",
+    "cross-env": "10.1.0",
     "tsx": "4.22.4",
-    "typescript": "5.9.3",
-    "@types/node": "22.20.0"
+    "typescript": "5.9.3"
   }
 }

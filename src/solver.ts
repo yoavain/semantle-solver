@@ -9,6 +9,7 @@ import {
 import { formatRank, type BoardEntry } from "./types.ts";
 import { writeRunLog, type GuessLogEntry } from "./runlog.ts";
 import { openTextLog, logLine, toVisualRTL } from "./textlog.ts";
+import { loadUnknownWords, recordUnknownWord } from "./unknownwords.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sortBoard = (board: BoardEntry[]) => board.sort((a, b) => b.sim - a.sim);
@@ -45,7 +46,8 @@ async function main() {
   }
 
   const tried = new Set<string>();
-  const rejected = new Set<string>();
+  const rejected = loadUnknownWords();
+  if (rejected.size) logLine(`  [unknown-words] preloaded ${rejected.size} known-unknown words`);
   const board: BoardEntry[] = [];
   const guessLog: GuessLogEntry[] = [];
   const bestHistory: number[] = [];
@@ -111,24 +113,28 @@ async function main() {
 
         if (!r.ok || r.sim == null) {
           rejected.add(w);
+          recordUnknownWord(w);
           logLine(`  ✗ ${toVisualRTL(w)} — unknown word`, `  ✗ ${w} — unknown word`);
           continue;
         }
         tried.add(w);
         board.push({ word: w, sim: r.sim, rank: r.rank });
         const hot = r.rank != null ? "  🔥" : "";
+        // Empirically, the FOUND row's word renders correctly on-screen WITHOUT toVisualRTL (unlike
+        // every other row) — observed consistently across separate terminals/runs. Exempt it rather than
+        // theorize why; every other rank still needs the transform.
+        const rowWord = r.rank === "FOUND" ? w : toVisualRTL(w);
         logLine(
-          `  • ${toVisualRTL(w).padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`,
+          `  • ${rowWord.padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`,
           `  • ${w.padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`,
         );
 
         if (r.rank === "FOUND" || r.sim >= 100) {
           sortBoard(board);
           const banner = await readResponse(page);
-          logLine(
-            `\n🎉 SOLVED: "${toVisualRTL(w)}" in ${tried.size} accepted guesses.`,
-            `\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`,
-          );
+          // Same empirical exemption as the FOUND row above — this line's word also renders correctly
+          // un-transformed.
+          logLine(`\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`);
           if (banner) {
             const line = banner.split("\n")[0];
             logLine(toVisualRTL(line), line);
