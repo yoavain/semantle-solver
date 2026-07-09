@@ -103,6 +103,9 @@ Each turn: `JSON.stringify(await window.guessMany(['מילה1','מילה2', ...]
 
 ## 5. Strategy — word2vec hill-climbing
 
+**Target:** a good run solves in well under 200 total guesses. Being stuck below the top-1000 cutoff
+(every guess `(רחוק)`) past ~40-50 guesses is a bug signal, not normal variance — see item 10.
+
 1. **Broad sweep first** (~15–20 diverse nouns, §6) to find which semantic region is warm.
 2. **Score against the day's scale.** Anything ≥ the top-1000 cutoff enters `N/1000` and is real signal;
    `(רחוק)` words are cold but still directional — compare their raw similarity to triangulate.
@@ -141,6 +144,32 @@ Each turn: `JSON.stringify(await window.guessMany(['מילה1','מילה2', ...]
    the pool for its opening batch — `diverseSeed()` in `src/embedding.ts` greedily farthest-point-samples
    over the pool's embedding vectors, so the 18 opening words are spread across semantic space by
    construction and can't cluster into one domain and skip another by chance.
+10. **Cold-start blind spot in the embedding engine — found and fixed after #1599.** #1599 got stuck at
+    best sim 42.44 (בעל) from guess ~20 through guess ~130 with zero improvement. Root cause:
+    `rocchioQuery()` (`src/embedding.ts`) returns `null` whenever NO guess has ever crossed
+    `rocchioHotMin` (sim ≥ 50) OR entered the top-1000 — and when it's `null`, `embeddingCandidates()`
+    returns `[]`, so `nextPool()` (`src/solver.ts`) fell through *silently* to LLM-only for the whole
+    cold phase. This run never crossed that bar even once in 129 guesses, so it was 100% LLM associative
+    guessing from round 2 onward — the LLM's "PLATEAU → pivot" reasoning kept re-walking one
+    neighbourhood (pet → owner → enclosure → travel → luggage) without landing anything better, which is
+    what the user meant by "even random-seeming words, nothing makes it closer": an LLM's plateau pivots
+    are not actually diverse in *embedding* space even when they look lexically varied. **Fix:**
+    `nextPool()` now checks `rocchioQuery(board) === null` ("cold") as a signal separate from `plateau`;
+    while cold, candidates come from `diverseExpand()` (new, in `src/embedding.ts`) — a farthest-point
+    sample over a random slice of the embedding vocabulary's common-content-word band (skips the ~300
+    top function words like של/את/על, and skips past index ~30k where the fastText frequency-sorted
+    tail turns into rare inflected forms the game likely doesn't recognize) — instead of relying on the
+    LLM. The instant any guess goes hot, behavior reverts to the existing Rocchio nearest-neighbour
+    pull-close logic. Net rule: **low scores only → sample FAR/broad across embedding space; once
+    something scores well → sample CLOSE to it** (the "hot" side already worked; the cold side was the
+    gap).
+11. **Terminal RTL display vs. copy-paste.** Some Windows consoles don't apply the Unicode bidi
+    algorithm, so Hebrew words in a round-by-round printout can look reversed/garbled on screen.
+    Do **not** reverse the string before printing to "fix" this — that corrupts copy-paste (the
+    clipboard then carries the reversed characters). Instead the automated solver mirrors every printed
+    line, unmodified, to a plain-text file (`src/textlog.ts` → `logs/<puzzle>-<date>.log`, gitignored,
+    separate from the structured `runs/*.json`); open that file in an editor with real bidi rendering
+    (VS Code, Notepad) to read a stuck game's guesses correctly instead of squinting at the raw console.
 
 ## 6. Reference data
 
@@ -184,3 +213,4 @@ memory of one game.
 | #1590  | 2026-06-30 | **מנעול** (lock)   | 145     | sweep → עץ(wood)43/כלב(dog)38 → handheld implements (מקל 58) → power tools + fasteners (מקדחה 67/976, ברגים 67/971) → device/mechanism (התקן 67/979, מתג 67/977) → **מנעול** 100. Lesson: the tool cluster was the answer's *installation context*, not its category — on a ~67 plateau, pivot to "what object is installed with these / what device do these parts form." Weak early pointers: בריח 58, מפתח 46, התקן 67. *(Full guess history not captured — predates the runs/ log; see `runs/1590-2026-06-30.json` for the backfilled summary.)* |
 | #1597  | 2026-07-06 | **חיוך** (smile)   | 106     | Fast solve: starter word אהבה (love) landed at sim 59.79/rank 348 on guess #3 — the pool happened to already contain a close neighbor, so the whole game was a normal hillclimb with no cold phase. |
 | #1598  | 2026-07-07 | **מגזר** (sector)  | 136     | sweep (all concrete/physical, no hits) → 50+ guesses drilling a food/kitchen/harvest tangent (טעם 32, מפתח 40, כרם 35, זית 29 — all cold, never really climbing) → חקלאות(agriculture) 53.65 finally broke 50 at guess #68 → business/finance cluster (הייטק 70.8/993, עסקים 61.6/829, פיננסים 64.4/927, עסקי 66.2/964) → **מגזר** 100. Lesson: warm-up took ~70 guesses because (a) the starter pool had zero economy/society/government coverage, and (b) the "chase concrete nouns, skip hypernyms" heuristic is *wrong* for institutional secrets — see §5.9. Also confirmed the embedding engine (`rocchioQuery`) contributes nothing until a guess crosses sim 50, so this whole cold phase was pure LLM associative chaining with no correction. Pool + prompt heuristic updated in response (§5.9, §6). |
+| #1599  | 2026-07-08 | **קצר** (short)    | 43      | Automated run, first game after the §5.10 cold-start fix (`diverseExpand`). A manual/pre-fix attempt on this same puzzle had stalled 129+ guesses at best 42.44 (בעל), never crossing the top-1000 cutoff (43.25) — see §5.10 for the root cause. Post-fix: round 1 broad sweep found nothing (best 34.91, all `(רחוק)`); round 2's cold-mode candidates (mixed `diverseExpand` far-samples + LLM) included זמן (time), which landed at 68.92/998 — instantly hot. The very next round's warm nearest-neighbour candidates proposed **קצר** (short, as in the collocation "זמן קצר" = "a short time") for guess #43 → 100/FOUND. Only 1 guess needed between first-hot and solved once the embedding engine had a real signal to pull toward — confirms the cold→far / hot→close split works as intended. |

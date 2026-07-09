@@ -3,15 +3,18 @@ import { CONFIG } from "./config.ts";
 import { openGame, guess, readCalibration, readPuzzleNumber, readResponse, type GameHandle } from "./browser.ts";
 import { generateCandidates, checkModel } from "./ollama.ts";
 import { STARTER_POOL, shuffle, cleanCandidates } from "./strategy.ts";
-import { embeddingAvailable, loadEmbedding, embeddingCandidates, clusterCohesion, diverseSeed } from "./embedding.ts";
+import {
+  embeddingAvailable, loadEmbedding, embeddingCandidates, clusterCohesion, diverseSeed, diverseExpand, rocchioQuery,
+} from "./embedding.ts";
 import { formatRank, type BoardEntry } from "./types.ts";
 import { writeRunLog, type GuessLogEntry } from "./runlog.ts";
+import { openTextLog, logLine } from "./textlog.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sortBoard = (board: BoardEntry[]) => board.sort((a, b) => b.sim - a.sim);
 
 async function main() {
-  console.log(`\n=== Semantle solver — model=${CONFIG.model} ` +
+  logLine(`\n=== Semantle solver — model=${CONFIG.model} ` +
     `throttle=${CONFIG.throttleMs}ms headless=${CONFIG.headless} ===`);
 
   // checkModel (HTTP round-trip) and openGame (browser launch + navigation) are independent —
@@ -21,7 +24,7 @@ async function main() {
 
   const useEmbedding = CONFIG.embedding && embeddingAvailable();
   if (useEmbedding) loadEmbedding();
-  else console.log("  [embedding] not available (run `npm run build:vectors`) — LLM-only mode");
+  else logLine("  [embedding] not available (run `npm run build:vectors`) — LLM-only mode");
 
   // If checkModel fails, close the browser launched concurrently rather than leaking it.
   let handle: GameHandle;
@@ -34,9 +37,10 @@ async function main() {
   }
   const { browser, page } = handle;
   const calibration = await readCalibration(page);
-  if (calibration) console.log(`Daily scale: ${calibration}\n`);
   const puzzle = await readPuzzleNumber(page);
   const date = new Date().toISOString().slice(0, 10);
+  openTextLog(puzzle, date);
+  if (calibration) logLine(`Daily scale: ${calibration}\n`);
 
   const tried = new Set<string>();
   const rejected = new Set<string>();
@@ -58,9 +62,16 @@ async function main() {
   // same-category neighbours survive) from a diverse hub-word plateau (genuinely pivot frame).
   async function nextPool(plateau: boolean, tight: boolean): Promise<string[]> {
     const exclude = new Set<string>([...tried, ...rejected]);
+    // No guess has crossed rocchioHotMin or entered the top-1000 yet -> rocchioQuery has no positive
+    // signal to pull toward. Used to fall through silently to LLM-only for the whole cold phase (see
+    // CLAUDE.md #1599); instead keep sampling FAR/broad across the embedding space like round 1, mirroring
+    // the "low scores -> look far; good scores -> look close" rule.
+    const cold = useEmbedding && rocchioQuery(board) === null;
     const maxSim = plateau && tight ? CONFIG.diversityRelaxed : CONFIG.diversity;
-    let out: string[] = useEmbedding ? embeddingCandidates(board, exclude, CONFIG.batchSize, maxSim) : [];
-    if (!useEmbedding || plateau || out.length < CONFIG.batchSize) {
+    let out: string[] = [];
+    if (cold) out = diverseExpand(exclude, CONFIG.batchSize, CONFIG.explorationNoise);
+    else if (useEmbedding) out = embeddingCandidates(board, exclude, CONFIG.batchSize, maxSim);
+    if (!useEmbedding || cold || plateau || out.length < CONFIG.batchSize) {
       const llm = await generateCandidates({
         top: board.slice(0, 15),
         tried,
@@ -84,7 +95,7 @@ async function main() {
         if (toGuess.length === 0) {
           toGuess = cleanCandidates(shuffle(STARTER_POOL), tried, rejected);
           if (toGuess.length === 0) {
-            console.log("No new candidates left — stopping.");
+            logLine("No new candidates left — stopping.");
             break;
           }
         }
@@ -98,31 +109,31 @@ async function main() {
 
         if (!r.ok || r.sim == null) {
           rejected.add(w);
-          console.log(`  ✗ ${w} — unknown word`);
+          logLine(`  ✗ ${w} — unknown word`);
           continue;
         }
         tried.add(w);
         board.push({ word: w, sim: r.sim, rank: r.rank });
         const hot = r.rank != null ? "  🔥" : "";
-        console.log(`  • ${w.padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`);
+        logLine(`  • ${w.padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`);
 
         if (r.rank === "FOUND" || r.sim >= 100) {
           sortBoard(board);
           const banner = await readResponse(page);
-          console.log(`\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`);
-          if (banner) console.log(banner.split("\n")[0]);
+          logLine(`\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`);
+          if (banner) logLine(banner.split("\n")[0]);
           const path = writeRunLog({
             puzzle, date, secret: w, mode: "automated", solved: true,
             totalGuesses: tried.size, guesses: guessLog, calibration,
             config: { model: CONFIG.model, embedding: CONFIG.embedding, seedSize: CONFIG.seedSize, batchSize: CONFIG.batchSize },
           });
-          console.log(`Run log: ${path}`);
+          logLine(`Run log: ${path}`);
           await browser.close();
           return;
         }
         if (tried.size >= CONFIG.maxGuesses) {
           sortBoard(board);
-          console.log(`\n⏹ Budget reached (${CONFIG.maxGuesses}). Best so far:`);
+          logLine(`\n⏹ Budget reached (${CONFIG.maxGuesses}). Best so far:`);
           printTop(board, 10);
           const path = writeRunLog({
             puzzle, date, secret: null, mode: "automated", solved: false,
@@ -130,7 +141,7 @@ async function main() {
             config: { model: CONFIG.model, embedding: CONFIG.embedding, seedSize: CONFIG.seedSize, batchSize: CONFIG.batchSize },
             notes: `Budget reached (${CONFIG.maxGuesses}). Best: ${board[0]?.word} (${board[0]?.sim.toFixed(2)}).`,
           });
-          console.log(`Run log: ${path}`);
+          logLine(`Run log: ${path}`);
           await browser.close();
           return;
         }
@@ -145,7 +156,7 @@ async function main() {
 
       round++;
       const plateauTag = plateau ? (tight ? " | PLATEAU(tight) → enumerate" : " | PLATEAU(loose) → pivot") : "";
-      console.log(`\n--- round ${round} | tried ${tried.size} | best ${bestSim.toFixed(2)}${plateauTag} ---`);
+      logLine(`\n--- round ${round} | tried ${tried.size} | best ${bestSim.toFixed(2)}${plateauTag} ---`);
       printTop(board, 8);
 
       pool = await nextPool(plateau, tight);
@@ -164,7 +175,7 @@ function isPlateau(history: number[]): boolean {
 
 function printTop(board: BoardEntry[], n: number) {
   for (const e of board.slice(0, n)) {
-    console.log(`    ${e.word.padEnd(12)} ${e.sim.toFixed(2).padStart(6)}  ${formatRank(e.rank)}`);
+    logLine(`    ${e.word.padEnd(12)} ${e.sim.toFixed(2).padStart(6)}  ${formatRank(e.rank)}`);
   }
 }
 

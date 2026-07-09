@@ -166,6 +166,45 @@ export function diverseSeed(pool: readonly string[], k: number, noise = 0): stri
   return chosen;
 }
 
+/** Cold-start exploration: when no guess has ever crossed rocchioHotMin or entered the top-1000,
+ *  rocchioQuery has zero positive signal to pull toward (see solver.ts nextPool) and candidate
+ *  generation used to fall through silently to LLM-only for the rest of the game — which tends to
+ *  wander a single associative chain (pet -> owner -> enclosure -> travel -> luggage, ...) rather than
+ *  covering new ground (see CLAUDE.md #1599). Keep doing broad, spread-out sampling like the opening
+ *  round instead: farthest-point-sample `k` words out of a random slice of the full vocabulary
+ *  (excluding tried/rejected), so each cold round lands in genuinely different semantic territory.
+ *  Samples a random slice first (rather than farthest-point-sampling the whole 100k-word vocabulary)
+ *  to keep this cheap every round. */
+export function diverseExpand(
+  exclude: Set<string>,
+  k: number,
+  noise = 0,
+  sampleSize = 3000,
+  maxIndex = 30000,
+): string[] {
+  if (!loaded || WORDS.length === 0) return [];
+  // WORDS is fastText's cc.he.300.vec, sorted by descending corpus frequency (see build-vectors.ts):
+  // the first ~300 entries are function words (של, את, על, לא, הוא, ...) with no content-word value, and
+  // the tail past ~30-50k is dominated by rare inflected forms the game's word list likely doesn't
+  // recognize (verified by sampling — index 60k+ is mostly obscure conjugated compounds). Restrict
+  // random sampling to the common-content-word band in between so cold-round guesses actually land.
+  const skip = Math.min(300, WORDS.length);
+  const upper = Math.min(maxIndex, WORDS.length);
+  const seenIdx = new Set<number>();
+  const pool: string[] = [];
+  const target = Math.min(sampleSize, Math.max(upper - skip, 0));
+  let guard = 0;
+  while (pool.length < target && guard < target * 20) {
+    guard++;
+    const i = skip + Math.floor(Math.random() * (upper - skip));
+    if (seenIdx.has(i)) continue;
+    seenIdx.add(i);
+    const w = WORDS[i];
+    if (!exclude.has(w)) pool.push(w);
+  }
+  return diverseSeed(pool, k, noise);
+}
+
 /** Fisher-Yates sample of up to `k` items — local to avoid a strategy.ts <-> embedding.ts import cycle. */
 function shuffleSample<T>(arr: readonly T[], k: number): T[] {
   const out = arr.slice();
