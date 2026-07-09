@@ -8,7 +8,7 @@ import {
 } from "./embedding.ts";
 import { formatRank, type BoardEntry } from "./types.ts";
 import { writeRunLog, type GuessLogEntry } from "./runlog.ts";
-import { openTextLog, logLine } from "./textlog.ts";
+import { openTextLog, logLine, toVisualRTL } from "./textlog.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sortBoard = (board: BoardEntry[]) => board.sort((a, b) => b.sim - a.sim);
@@ -40,7 +40,9 @@ async function main() {
   const puzzle = await readPuzzleNumber(page);
   const date = new Date().toISOString().slice(0, 10);
   openTextLog(puzzle, date);
-  if (calibration) logLine(`Daily scale: ${calibration}\n`);
+  if (calibration) {
+    logLine(`Daily scale:\n${toVisualRTL(calibration)}\n`, `Daily scale:\n${calibration}\n`);
+  }
 
   const tried = new Set<string>();
   const rejected = new Set<string>();
@@ -109,19 +111,28 @@ async function main() {
 
         if (!r.ok || r.sim == null) {
           rejected.add(w);
-          logLine(`  ✗ ${w} — unknown word`);
+          logLine(`  ✗ ${toVisualRTL(w)} — unknown word`, `  ✗ ${w} — unknown word`);
           continue;
         }
         tried.add(w);
         board.push({ word: w, sim: r.sim, rank: r.rank });
         const hot = r.rank != null ? "  🔥" : "";
-        logLine(`  • ${w.padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`);
+        logLine(
+          `  • ${toVisualRTL(w).padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`,
+          `  • ${w.padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`,
+        );
 
         if (r.rank === "FOUND" || r.sim >= 100) {
           sortBoard(board);
           const banner = await readResponse(page);
-          logLine(`\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`);
-          if (banner) logLine(banner.split("\n")[0]);
+          logLine(
+            `\n🎉 SOLVED: "${toVisualRTL(w)}" in ${tried.size} accepted guesses.`,
+            `\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`,
+          );
+          if (banner) {
+            const line = banner.split("\n")[0];
+            logLine(toVisualRTL(line), line);
+          }
           const path = writeRunLog({
             puzzle, date, secret: w, mode: "automated", solved: true,
             totalGuesses: tried.size, guesses: guessLog, calibration,
@@ -175,7 +186,10 @@ function isPlateau(history: number[]): boolean {
 
 function printTop(board: BoardEntry[], n: number) {
   for (const e of board.slice(0, n)) {
-    logLine(`    ${e.word.padEnd(12)} ${e.sim.toFixed(2).padStart(6)}  ${formatRank(e.rank)}`);
+    logLine(
+      `    ${toVisualRTL(e.word).padEnd(12)} ${e.sim.toFixed(2).padStart(6)}  ${formatRank(e.rank)}`,
+      `    ${e.word.padEnd(12)} ${e.sim.toFixed(2).padStart(6)}  ${formatRank(e.rank)}`,
+    );
   }
 }
 
