@@ -9,7 +9,7 @@ import path from "node:path";
 import { DIM, normalize } from "../src/embedding.ts";
 
 const URL = "https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.he.300.vec.gz";
-const N = Number(process.env.VEC_N ?? 50000); // Hebrew words to keep
+const N = Number(process.env.VEC_N ?? 100000); // Hebrew words to keep
 const MAX_LINES = Number(process.env.VEC_MAX_LINES ?? 150000); // safety cap on lines read
 const HEBREW = /^[א-ת]{2,}$/;
 const OUT_DIR = path.resolve("data");

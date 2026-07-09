@@ -9,7 +9,7 @@ There are two ways it plays, and this README explains how they work for a human 
 1. **Manual** — Claude plays directly through browser tools, guided by [`CLAUDE.md`](./CLAUDE.md)
    (just say *"play the daily game"*).
 2. **Automated script** — a standalone TypeScript program: a **local** Hebrew embedding + a **local**
-   LLM (via Ollama) drive a headed Playwright browser. Design & status in [`PLAN.md`](./PLAN.md).
+   LLM (via Ollama) drive a headed Playwright browser. Architecture below.
 
 The "brain" is fully offline — only the guesses themselves ever leave the machine.
 
@@ -49,7 +49,7 @@ flowchart TD
 | `embedding.ts` | Loads local Hebrew fastText vectors; cosine **nearest-neighbour** + **Rocchio relevance feedback**; the primary candidate engine. |
 | `strategy.ts` | Broad-sweep seed words, the LLM system prompt (encodes the heuristics below), Hebrew-only cleaning + dedup. |
 | `solver.ts` | The loop: throttle, `tried`/`rejected` sets, plateau detection, win/budget stop. |
-| `scripts/build-vectors.ts` | One-time: streams fastText `cc.he.300` and caches the top-100k unit vectors to `data/`. |
+| `scripts/build-vectors.ts` | One-time: streams fastText `cc.he.300` and caches the top-100k unit vectors to `data/` (`VEC_N` env overrides). |
 
 ## The candidate engine (the interesting part)
 
@@ -93,8 +93,8 @@ The automated script (not the manual Claude flow) needs:
   `gemma4:e4b`). `npm start` fails fast with a clear error if Ollama isn't reachable at
   `OLLAMA_URL` (default `http://localhost:11434`), and warns if `MODEL` isn't pulled.
 - **~1.3 GB free disk / bandwidth**, one time, for `npm run build:vectors` — it streams the
-  Hebrew fastText vectors (`cc.he.300`, gzipped) and caches a trimmed top-50k subset to `data/`
-  (gitignored); the transient download is the big cost, the cache itself is much smaller.
+  Hebrew fastText vectors (`cc.he.300`, gzipped) and caches a trimmed top-100k subset to `data/`
+  (gitignored, ~120 MB); the transient download is the big cost, the cache itself is much smaller.
 - A **Chromium** browser for Playwright (installed below) — the script drives a real, headed
   browser window so you can watch it play.
 
@@ -106,12 +106,17 @@ npm run build:vectors      # one-time: download/cache the Hebrew vectors into da
 npm start                  # headed — watch it play today's puzzle
 ```
 Tunables (env): `MODEL`, `EMBEDDING` (false = LLM-only), `HEADLESS`, `THROTTLE_MS`, `BATCH`,
-`MAX_GUESSES`, `TEMP`, `OLLAMA_URL`.
+`MAX_GUESSES`, `TEMP`, `OLLAMA_URL`, plus the diversity/plateau/Rocchio-feedback knobs — see
+`src/config.ts` for the full list with defaults and explanations. `npm run play:quiet` runs headless.
 
 ## Files
 - **`CLAUDE.md`** — the manual-play runbook Claude follows (zero extra instructions). Self-updating log.
-- **`PLAN.md`** — the script's design, status, model tests, and a resumable debugging log.
 - **`README.md`** — this human-facing overview.
-- **`src/` · `scripts/`** — the solver. **`data/`** — the (gitignored) local vector cache.
+- **`src/`** — the solver (`config.ts` holds every tunable; `types.ts` the shared types). **`scripts/`**
+  — one-time vector prep.
+- **`data/`** — gitignored local cache: the fastText vectors (`he-words.json`/`he-vecs.f32`) and a
+  persisted list of words the game doesn't recognize (`unknown-words.txt`, see `src/unknownwords.ts`).
+- **`logs/`** — gitignored, plain-text per-game transcript with correct Hebrew reading order for
+  editors/terminals without bidi support (`src/textlog.ts`); mirrors the console output.
 - **`runs/`** — gitignored, per-game structured logs (schema: `src/runlog.ts`), written by both play
   modes. Raw material for refining `STARTER_POOL` / the heuristics once enough games accumulate.
