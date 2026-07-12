@@ -113,7 +113,11 @@ Each turn: `JSON.stringify(await window.guessMany(['מילה1','מילה2', ...]
    כסף = money **& silver**). Probe each sense's neighbours and follow whichever climbs.
 4. **Exploit morphology — this model is very number-sensitive.** Plural/collective forms can score
    *far* higher than singular in list/inventory contexts (#1590: ברגים 67 vs בורג 25; אומים 60 vs אום 17).
-   **Always test both plural and singular of a hot word.**
+   **Always test both plural and singular of a hot word — and its construct-state (סמיכות, e.g. -ת
+   ending) form too** (#1602: construct-state הכנת hit 73.99 fifty-five guesses before the automated
+   solver got around to trying the plain base word הכנה). The automated solver now does this
+   automatically for anything entering the top-1000 (`morphVariants()` in `src/strategy.ts`, see §5.12);
+   manual sessions still need to do it by hand.
 5. **Skip hypernyms — but only for physical-object domains.** Category-hub / umbrella words are usually
    COLD when their members are concrete objects (#1590: drill/screws 67 hot, but כלי/ציוד/אביזרים/מכשירים
    and workshop/garage 30–46). The model keys on collocation, not meaning — so even a *synonym* of a hot
@@ -170,6 +174,25 @@ Each turn: `JSON.stringify(await window.guessMany(['מילה1','מילה2', ...]
     line, unmodified, to a plain-text file (`src/textlog.ts` → `logs/<puzzle>-<date>.log`, gitignored,
     separate from the structured `runs/*.json`); open that file in an editor with real bidi rendering
     (VS Code, Notepad) to read a stuck game's guesses correctly instead of squinting at the raw console.
+12. **Two more cold-phase gaps found after #1602 — both now fixed in code.** #1602 (secret הכנה,
+    "preparation") took 210 guesses; ~100 of them (guess 24→124) were stuck at best sim 41-46 — real
+    directional signal (נקיון, משימה, חובה — all task/duty-flavored) sitting just under both
+    `rocchioHotMin` (50) and that day's actual top-1000 cutoff (47.3), so `rocchioQuery()` stayed `null`
+    the whole time and the engine ran broad-random `diverseExpand` + LLM with no way to lean toward the
+    near-miss cluster (same family of bug as #1599, item 10, just with the threshold barely out of
+    reach instead of never reached). Separately, once hot, the game found the secret's own construct
+    form **הכנת** (sim 73.99 — tied for the single closest word in that day's top-1000) at guess 155 and
+    its plural **הכנות** (sim 69.64) at guess 194, but didn't try the bare base word **הכנה** until guess
+    210 — 55 and 16 guesses later respectively. Root causes: (a) `rocchioQuery` summed the *entire* board
+    history with no recency weighting, so ~150 early unrelated cold guesses kept diluting the pull
+    toward the real signal even long after it appeared; (b) the "test singular/plural of a hot word"
+    rule (item 4) was LLM-guidance only, didn't mention construct-state (סמיכות, e.g. -ת endings), and
+    wasn't deterministic. **Fixes applied:** `rocchioQuery()` (`src/embedding.ts`) now applies a
+    per-entry recency half-life decay (`CONFIG.rocchioRecencyHalfLife`, default 80 guesses) so old cold
+    guesses fade instead of permanently dragging the query vector; and `morphVariants()` (new, in
+    `src/strategy.ts`) deterministically generates absolute/construct/plural noun-ending swaps
+    (-ה/-ת/-ות/-ים) for any guess that enters the top-1000, queued with priority into the very next
+    round (`solver.ts` `morphQueue`) instead of hoping the LLM thinks to try them.
 
 ## 6. Reference data
 
@@ -214,3 +237,4 @@ memory of one game.
 | #1597  | 2026-07-06 | **חיוך** (smile)   | 106     | Fast solve: starter word אהבה (love) landed at sim 59.79/rank 348 on guess #3 — the pool happened to already contain a close neighbor, so the whole game was a normal hillclimb with no cold phase. |
 | #1598  | 2026-07-07 | **מגזר** (sector)  | 136     | sweep (all concrete/physical, no hits) → 50+ guesses drilling a food/kitchen/harvest tangent (טעם 32, מפתח 40, כרם 35, זית 29 — all cold, never really climbing) → חקלאות(agriculture) 53.65 finally broke 50 at guess #68 → business/finance cluster (הייטק 70.8/993, עסקים 61.6/829, פיננסים 64.4/927, עסקי 66.2/964) → **מגזר** 100. Lesson: warm-up took ~70 guesses because (a) the starter pool had zero economy/society/government coverage, and (b) the "chase concrete nouns, skip hypernyms" heuristic is *wrong* for institutional secrets — see §5.9. Also confirmed the embedding engine (`rocchioQuery`) contributes nothing until a guess crosses sim 50, so this whole cold phase was pure LLM associative chaining with no correction. Pool + prompt heuristic updated in response (§5.9, §6). |
 | #1599  | 2026-07-08 | **קצר** (short)    | 43      | Automated run, first game after the §5.10 cold-start fix (`diverseExpand`). A manual/pre-fix attempt on this same puzzle had stalled 129+ guesses at best 42.44 (בעל), never crossing the top-1000 cutoff (43.25) — see §5.10 for the root cause. Post-fix: round 1 broad sweep found nothing (best 34.91, all `(רחוק)`); round 2's cold-mode candidates (mixed `diverseExpand` far-samples + LLM) included זמן (time), which landed at 68.92/998 — instantly hot. The very next round's warm nearest-neighbour candidates proposed **קצר** (short, as in the collocation "זמן קצר" = "a short time") for guess #43 → 100/FOUND. Only 1 guess needed between first-hot and solved once the embedding engine had a real signal to pull toward — confirms the cold→far / hot→close split works as intended. |
+| #1602  | 2026-07-11 | **הכנה** (preparation) | 210 | sweep (all cold, 20-30s) → ~100 guesses stuck at sim 41-46 (נקיון 43.26, משימה 46.02, חובה 41.62 — task/duty-flavored, but under both `rocchioHotMin`(50) and the day's top-1000 cutoff(47.3), so `rocchioQuery` stayed cold/random the whole stretch) → LLM associative chaining (תפקיד→מטרה→עבודה→ייצור→ציוד→מערכת) finally hit **תהליך**(process) 53.1/858 at guess 124 → fast climb through stage/completion words (השלמת 63/991, שלבי 55.9/940, סיום 48.9/400) → **הכנת**(construct "preparation of") 73.99/999 at guess 155 (tied for the day's single closest word!) → **הכנות**(plural) 69.64/996 at guess 194 → base word **הכנה** not tried until guess 210 → 100/FOUND. Lesson: see §5.12 — two engine gaps (no recency decay in `rocchioQuery`, no deterministic construct/plural-swap follow-up) both now fixed in code (`rocchioRecencyHalfLife` config, `morphVariants()` + `morphQueue`). |

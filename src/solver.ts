@@ -2,7 +2,7 @@
 import { CONFIG } from "./config.ts";
 import { openGame, guess, readCalibration, readPuzzleNumber, readResponse, type GameHandle } from "./browser.ts";
 import { generateCandidates, checkModel } from "./ollama.ts";
-import { STARTER_POOL, shuffle, cleanCandidates } from "./strategy.ts";
+import { STARTER_POOL, shuffle, cleanCandidates, morphVariants } from "./strategy.ts";
 import {
   embeddingAvailable, loadEmbedding, embeddingCandidates, clusterCohesion, diverseSeed, diverseExpand, rocchioQuery,
 } from "./embedding.ts";
@@ -51,6 +51,10 @@ async function main() {
   const board: BoardEntry[] = [];
   const guessLog: GuessLogEntry[] = [];
   const bestHistory: number[] = [];
+  // Deterministic morphological follow-ups (see strategy.ts morphVariants), queued whenever a guess
+  // enters the top-1000 and guessed with priority next round — see CLAUDE.md #1602 (construct/plural
+  // forms of the secret scored 73.99 and 69.64 but the base word wasn't tried until 55 guesses later).
+  const morphQueue: string[] = [];
   let round = 0;
   // First round spans semantic space deliberately (farthest-point sampling over the pool's embedding
   // vectors) instead of a plain random subset, so it can't cluster into one domain and miss another by
@@ -90,7 +94,8 @@ async function main() {
 
   try {
     while (true) {
-      let toGuess = cleanCandidates(pool, tried, rejected);
+      let toGuess = cleanCandidates([...morphQueue, ...pool], tried, rejected);
+      morphQueue.length = 0;
 
       // If we have no fresh candidates, regenerate (forcing a plateau round), then fall back to probes.
       if (toGuess.length === 0) {
@@ -118,7 +123,8 @@ async function main() {
           continue;
         }
         tried.add(w);
-        board.push({ word: w, sim: r.sim, rank: r.rank });
+        board.push({ word: w, sim: r.sim, rank: r.rank, seq: tried.size });
+        if (typeof r.rank === "number") morphQueue.push(...morphVariants(w));
         const hot = r.rank != null ? "  🔥" : "";
         // Empirically, the FOUND row's word renders correctly on-screen WITHOUT toVisualRTL (unlike
         // every other row) — observed consistently across separate terminals/runs. Exempt it rather than

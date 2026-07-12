@@ -75,23 +75,30 @@ export function nearest(
 }
 
 /** Build a relevance-feedback query: pull toward hot guesses, push away from cold ones.
- *  Tuning knobs live in CONFIG (rocchioHotMin/rocchioBeta/rocchioRankBonus) alongside `diversity`. */
+ *  Tuning knobs live in CONFIG (rocchioHotMin/rocchioBeta/rocchioRankBonus/rocchioRecencyHalfLife)
+ *  alongside `diversity`. Every entry's weight is discounted by how many guesses old it is (half-life
+ *  decay) so a long run of early, unrelated cold guesses can't keep permanently dragging the query away
+ *  from a real signal that only shows up much later — see CLAUDE.md #1602. */
 export function rocchioQuery(board: BoardEntry[]): Float32Array | null {
-  const { rocchioHotMin: hotMin, rocchioBeta: beta, rocchioRankBonus: rankBonus } = CONFIG;
+  const { rocchioHotMin: hotMin, rocchioBeta: beta, rocchioRankBonus: rankBonus, rocchioRecencyHalfLife: halfLife } = CONFIG;
   const q = new Float32Array(DIM);
   let positives = 0;
+  const total = board.length;
 
   for (const e of board) {
     const v = vecOf(e.word);
     if (!v) continue;
+    const age = total - (e.seq ?? total);
+    const decay = halfLife > 0 ? Math.pow(0.5, age / halfLife) : 1;
     const inTop = e.rank !== null && e.rank !== "FOUND";
     if (e.sim >= hotMin || inTop) {
       let w = Math.max(e.sim - hotMin, 1);
       if (inTop) w += ((e.rank as number) / 1000) * rankBonus;
+      w *= decay;
       for (let j = 0; j < DIM; j++) q[j] += w * v[j];
       positives++;
     } else {
-      const w = (beta * (hotMin - e.sim)) / hotMin;
+      const w = ((beta * (hotMin - e.sim)) / hotMin) * decay;
       for (let j = 0; j < DIM; j++) q[j] -= w * v[j];
     }
   }

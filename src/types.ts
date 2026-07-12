@@ -23,6 +23,10 @@ export interface BoardEntry {
   word: string;
   sim: number;
   rank: Rank;
+  /** 1-indexed accepted-guess ordinal when this entry was recorded. Board array order gets reshuffled
+   *  by sortBoard(), so rocchioQuery's recency decay (embedding.ts) needs this to know true guess age
+   *  independent of current array position. Optional so older/ad-hoc BoardEntry literals still compile. */
+  seq?: number;
 }
 
 export interface CandidateContext {

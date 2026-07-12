@@ -48,6 +48,40 @@ export function cleanCandidates(
   return out;
 }
 
+/** Hebrew noun-ending swaps: absolute-feminine (-ה) <-> construct-feminine (-ת) <-> feminine-plural
+ *  (-ות), plus masculine singular <-> plural (-ים). Deliberately generates some invalid forms too (e.g.
+ *  a plural of a word that has none) — that's fine, an unknown word costs nothing (CLAUDE.md §4).
+ *  Run #1602 (secret הכנה) found the construct form הכנת (sim 73.99, tied for the day's single closest
+ *  word) at guess 155 and the plural הכנות (sim 69.64) at guess 194, but didn't try the base word הכנה
+ *  itself until guess 210 — the LLM's own "try singular/plural" instruction (see SYSTEM_PROMPT rule 3)
+ *  doesn't cover construct-state and isn't deterministic. This makes the obvious swap automatic instead
+ *  of hoping the model does it; solver.ts calls it on every guess that enters the top-1000. */
+export function morphVariants(word: string): string[] {
+  if (word.length < 2) return [];
+  const out = new Set<string>();
+  if (word.endsWith("ות")) {
+    const stem = word.slice(0, -2);
+    out.add(stem + "ה");
+    out.add(stem + "ת");
+  } else if (word.endsWith("ים")) {
+    out.add(word.slice(0, -2));
+  } else if (word.endsWith("ה")) {
+    const stem = word.slice(0, -1);
+    out.add(stem + "ת");
+    out.add(stem + "ות");
+    out.add(word + "ים");
+  } else if (word.endsWith("ת")) {
+    const stem = word.slice(0, -1);
+    out.add(stem + "ה");
+    out.add(stem + "ות");
+  } else {
+    out.add(word + "ים");
+    out.add(word + "ה");
+  }
+  out.delete(word);
+  return [...out];
+}
+
 export const SYSTEM_PROMPT = `You generate candidate words for Hebrew "Semantle" (סמנטעל).
 The game scores each guess by word2vec cosine similarity (0-100) to a hidden Hebrew word, plus a rank
 "N/1000" where HIGHER N = CLOSER (999 = closest non-answer; "far" = outside the top 1000).

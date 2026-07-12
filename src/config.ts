@@ -37,6 +37,11 @@ export const CONFIG = {
   rocchioBeta: num(process.env.ROCCHIO_BETA, 0.3),
   /** Rocchio: extra pull for words inside the top-1000, scaled by rank. */
   rocchioRankBonus: num(process.env.ROCCHIO_RANK_BONUS, 25),
+  /** Rocchio: recency half-life in accepted guesses. Every board entry's pull/push weight is halved
+   *  every this-many-guesses-old it is, so a long cold opening (see #1602: ~100 guesses stuck at
+   *  sim 41-46) can't permanently drag the query vector away from a signal that shows up later. Set
+   *  <= 0 to disable decay (every guess weighted equally regardless of age). */
+  rocchioRecencyHalfLife: num(process.env.ROCCHIO_RECENCY_HALFLIFE, 80),
 
   /** Run the browser visibly (non-headless) so you can watch. */
   headless: bool(process.env.HEADLESS, false),
