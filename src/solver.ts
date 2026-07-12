@@ -1,6 +1,8 @@
 // Entry point: orchestrates the play loop. Pure-code loop/stop/dedup; the model only suggests words.
 import { CONFIG } from "./config.ts";
-import { openGame, guess, readCalibration, readPuzzleNumber, readResponse, type GameHandle } from "./browser.ts";
+import {
+  openGame, guess, readCalibration, parseCalibrationCutoff, readPuzzleNumber, readResponse, type GameHandle,
+} from "./browser.ts";
 import { generateCandidates, checkModel } from "./ollama.ts";
 import { STARTER_POOL, shuffle, cleanCandidates, morphVariants } from "./strategy.ts";
 import {
@@ -38,6 +40,7 @@ async function main() {
   }
   const { browser, page } = handle;
   const calibration = await readCalibration(page);
+  const calibrationCutoff = calibration ? parseCalibrationCutoff(calibration) : null;
   const puzzle = await readPuzzleNumber(page);
   const date = new Date().toISOString().slice(0, 10);
   openTextLog(puzzle, date);
@@ -124,12 +127,13 @@ async function main() {
         }
         tried.add(w);
         board.push({ word: w, sim: r.sim, rank: r.rank, seq: tried.size });
-        if (typeof r.rank === "number") morphQueue.push(...morphVariants(w));
+        // Ranked guesses always get morph follow-ups; on a high-cutoff day (#1603) a real near-miss can
+        // sit just below that day's top-1000 line and never get a numeric rank at all, so also catch
+        // unranked guesses close to the known cutoff (see CONFIG.morphNearMissMargin).
+        const nearMissHot = calibrationCutoff != null && r.sim >= calibrationCutoff - CONFIG.morphNearMissMargin;
+        if (typeof r.rank === "number" || nearMissHot) morphQueue.push(...morphVariants(w));
         const hot = r.rank != null ? "  🔥" : "";
-        // Empirically, the FOUND row's word renders correctly on-screen WITHOUT toVisualRTL (unlike
-        // every other row) — observed consistently across separate terminals/runs. Exempt it rather than
-        // theorize why; every other rank still needs the transform.
-        const rowWord = r.rank === "FOUND" ? w : toVisualRTL(w);
+        const rowWord = toVisualRTL(w);
         logLine(
           `  • ${rowWord.padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`,
           `  • ${w.padEnd(12)} ${r.sim.toFixed(2).padStart(6)}  ${formatRank(r.rank)}${hot}`,
@@ -138,9 +142,10 @@ async function main() {
         if (r.rank === "FOUND" || r.sim >= 100) {
           sortBoard(board);
           const banner = await readResponse(page);
-          // Same empirical exemption as the FOUND row above — this line's word also renders correctly
-          // un-transformed.
-          logLine(`\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`);
+          logLine(
+            `\n🎉 SOLVED: "${toVisualRTL(w)}" in ${tried.size} accepted guesses.`,
+            `\n🎉 SOLVED: "${w}" in ${tried.size} accepted guesses.`,
+          );
           if (banner) {
             const line = banner.split("\n")[0];
             logLine(toVisualRTL(line), line);

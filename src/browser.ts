@@ -58,6 +58,17 @@ export async function readCalibration(page: Page): Promise<string> {
   return line.trim();
 }
 
+/**
+ * Pull the three similarity numbers out of the calibration sentence (closest/999th, 10th/990th,
+ * 1000th/1st — always reported in that order) and return the last: the raw cosine similarity a guess
+ * needs to clear the top-1000 today. Some days this "cutoff" sits far higher than others (see #1603:
+ * 60.22, vs. 43-57 on every other logged day) — see CLAUDE.md item 14.
+ */
+export function parseCalibrationCutoff(calibration: string): number | null {
+  const nums = [...calibration.matchAll(/הוא\s+(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
+  return nums.length ? nums[nums.length - 1] : null;
+}
+
 /** Puzzle number from the header ("חידה מספר NNN"), or null if it can't be found. */
 export async function readPuzzleNumber(page: Page): Promise<number | null> {
   const text = await page.evaluate(() => document.body.innerText || "");

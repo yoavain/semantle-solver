@@ -43,6 +43,14 @@ export const CONFIG = {
    *  <= 0 to disable decay (every guess weighted equally regardless of age). */
   rocchioRecencyHalfLife: num(process.env.ROCCHIO_RECENCY_HALFLIFE, 80),
 
+  /** morphVariants() (src/strategy.ts) normally only auto-queues plural/construct-state follow-ups for
+   *  a guess once it enters the top-1000 (gets a numeric rank). On a day whose top-1000 cutoff sits
+   *  unusually high (see #1603: cutoff 60.22 vs. the usual 43-57), a real near-miss can sit just below
+   *  that line and never trigger — so also queue variants for any unranked guess whose sim is within
+   *  this many points of the day's known cutoff (from parseCalibrationCutoff). No effect if the
+   *  calibration cutoff couldn't be parsed. */
+  morphNearMissMargin: num(process.env.MORPH_NEAR_MISS_MARGIN, 3),
+
   /** Run the browser visibly (non-headless) so you can watch. */
   headless: bool(process.env.HEADLESS, false),
 
@@ -53,7 +61,7 @@ export const CONFIG = {
   batchSize: num(process.env.BATCH, 12),
 
   /** Stop and report the best word after this many *valid* guesses. */
-  maxGuesses: num(process.env.MAX_GUESSES, 300),
+  maxGuesses: num(process.env.MAX_GUESSES, 500),
 
   /** Plateau detection: rounds of no best-similarity improvement before we tell the model to PIVOT. */
   plateauRounds: num(process.env.PLATEAU_ROUNDS, 2),

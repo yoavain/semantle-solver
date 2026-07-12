@@ -193,6 +193,34 @@ Each turn: `JSON.stringify(await window.guessMany(['מילה1','מילה2', ...]
     `src/strategy.ts`) deterministically generates absolute/construct/plural noun-ending swaps
     (-ה/-ת/-ות/-ים) for any guess that enters the top-1000, queued with priority into the very next
     round (`solver.ts` `morphQueue`) instead of hoping the LLM thinks to try them.
+13. **FOUND row / SOLVED line were exempted from `toVisualRTL` on a false "empirically renders fine
+    un-transformed" assumption — fixed.** After #1602 (or a later puzzle), `solver.ts` special-cased the
+    winning guess's word: every other row ran through `toVisualRTL()` (item 11) before printing, but the
+    FOUND row and the final `🎉 SOLVED: "..."` line printed the raw logical-order word, on the theory
+    that those two lines happened to render correctly without the transform. That theory was wrong — a
+    run on puzzle solved with secret **הפוך** showed the word backwards on-screen in exactly those two
+    lines while every other row displayed correctly, i.e. the untransformed lines were the broken ones,
+    not the exception that was fine. **Fix:** removed the exemption; `solver.ts` now calls
+    `toVisualRTL(w)` for the FOUND row and the SOLVED line exactly like every other row, with the
+    plain-logical-order word still going to the `.log` file via `logLine`'s separate `fileText` param
+    (copy-paste stays uncorrupted). If a future run shows *any* line backwards again, do not re-add a
+    per-line exemption — check whether `toVisualRTL` itself needs fixing for that case instead.
+14. **High-cutoff days starve `morphVariants()` of triggers — found on #1603, fixed in code.** #1603
+    (unsolved, ran the full budget) had an unusually high/narrow top-1000 band: calibration cutoff
+    (1/1000) = 60.22, vs. 43-57 on every other logged day. `rocchioHotMin` (50) is well below that, so
+    the Rocchio engine correctly treated ~20 guesses in the 50-59.9 sim range as "hot" and pulled toward
+    them — the direction-finding worked (necessity/desirability cluster, then a computation/logic
+    cluster) — but on this day sim 50-59 still isn't enough to enter the top-1000, so those guesses got
+    `rank: null`. Only 2 guesses ever cracked 60.22 in 300 tries (`רצוי` 63.20/rank547, `תלוי`
+    60.39/rank47), and `morphVariants()` only auto-queues plural/construct follow-ups when a guess has a
+    numeric rank (`solver.ts`) — so near-misses like `משתנה` (59.56, 0.66 short of the cutoff) and
+    `יתקבל` (59.67) never got their plural/variant forms tried at all, even though they were the
+    closest signal in the whole game. **Fix applied:** `parseCalibrationCutoff()` (new, in
+    `src/browser.ts`) extracts the day's actual top-1000 floor from the calibration sentence (last of
+    the three "הוא NN.NN" numbers); `solver.ts` now also queues `morphVariants()` for any *unranked*
+    guess whose sim is within `CONFIG.morphNearMissMargin` (default 3) points of that floor, not just
+    guesses that already got a numeric rank. No effect on normal-cutoff days or if the calibration
+    sentence can't be parsed (falls back to rank-only, the prior behavior).
 
 ## 6. Reference data
 
