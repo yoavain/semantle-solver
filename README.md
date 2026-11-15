@@ -83,7 +83,7 @@ problem. So the embedding does the climbing and the LLM does the creative leaps:
 
 The automated script (not the manual Claude flow) needs:
 
-- **Node.js 18+** (native `fetch` and ESM top-level `await` are used directly, no polyfills).
+- **Node.js 26+** (native `fetch` and ESM top-level `await` are used directly, no polyfills).
 - **[Ollama](https://ollama.com)** installed and running as the local LLM server:
   ```bash
   ollama serve                # if it isn't already running as a service
